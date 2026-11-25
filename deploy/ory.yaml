@@ -36,7 +36,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       initContainers:
         - name: migrate
-          image: oryd/kratos:v26.2.0
+          image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
           args: ["migrate", "sql", "-e", "--yes", "-c", "/etc/config/kratos/kratos.yml"]
           resources:
             requests: { cpu: 20m, memory: 32Mi }
@@ -53,7 +53,7 @@ spec:
             capabilities: { drop: [ALL] }
       containers:
         - name: kratos
-          image: oryd/kratos:v26.2.0
+          image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
           # Mail goes out from kratos-courier: with two replicas here, two couriers would send twice.
           args: ["serve", "-c", "/etc/config/kratos/kratos.yml"]
           env:
@@ -150,7 +150,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: courier
-          image: oryd/kratos:v26.2.0
+          image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
           args: ["courier", "watch", "-c", "/etc/config/kratos/kratos.yml"]
           env:
             - { name: SQA_OPT_OUT, value: "true" }
@@ -231,7 +231,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       initContainers:
         - name: migrate
-          image: oryd/hydra:v26.2.0
+          image: oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
           args: ["migrate", "sql", "up", "-e", "--yes", "-c", "/etc/config/hydra/hydra.yml"]
           resources:
             requests: { cpu: 20m, memory: 32Mi }
@@ -248,7 +248,7 @@ spec:
             capabilities: { drop: [ALL] }
       containers:
         - name: hydra
-          image: oryd/hydra:v26.2.0
+          image: oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
           args: ["serve", "all", "-c", "/etc/config/hydra/hydra.yml"]
           env:
             - { name: SQA_OPT_OUT, value: "true" }
@@ -325,7 +325,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       initContainers:
         - name: migrate
-          image: oryd/keto:v26.2.0
+          image: oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
           args: ["migrate", "up", "--yes", "-c", "/etc/config/keto/keto.yml"]
           resources:
             requests: { cpu: 20m, memory: 32Mi }
@@ -342,7 +342,7 @@ spec:
             capabilities: { drop: [ALL] }
       containers:
         - name: keto
-          image: oryd/keto:v26.2.0
+          image: oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
           args: ["serve", "-c", "/etc/config/keto/keto.yml"]
           env:
             - { name: SQA_OPT_OUT, value: "true" }
@@ -418,7 +418,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: oathkeeper
-          image: oryd/oathkeeper:v26.2.0
+          image: oryd/oathkeeper:v26.2.0@sha256:467329abde34feefca217b7af76fff59e77fe1795a19376e9d479f33c7c198fc
           args: ["serve", "-c", "/etc/config/oathkeeper/oathkeeper.yml"]
           env:
             - { name: SQA_OPT_OUT, value: "true" }
