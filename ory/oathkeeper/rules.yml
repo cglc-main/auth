@@ -1,0 +1,23 @@
+# Forward-auth for the admin UIs that have no login of their own. One rule covers every *.int host: a route opts in
+# by using the `forward-auth` middleware (deploy/routes.yaml), so an app with its own OIDC login (Grafana, Flux,
+# Stalwart, Nextcloud) never gets a second sign-in in front of it. Another group for some host: add a rule above
+# this one with a narrower url.
+# The group is a Keto object in the Group namespace; the subject is the Kratos identity id.
+
+- id: int-admin-uis
+  match:
+    url: "https://<*>.int.bulbashenko.com/<**>"
+    methods: [GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS]
+  authenticators:
+    - handler: cookie_session
+  authorizer:
+    handler: remote_json
+    config:
+      payload: |
+        {"namespace":"Group","object":"infra-admins","relation":"members","subject_set":{"namespace":"User","object":"{{ print .Subject }}","relation":""}}
+  mutators:
+    - handler: header
+  # Browsers without a session are redirected to sign in (see the handler's `when`); everything else falls back to
+  # a plain JSON error (errors.fallback).
+  errors:
+    - handler: redirect

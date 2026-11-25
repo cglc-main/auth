@@ -1,0 +1,57 @@
+# The admin APIs (kratos:4434, hydra:4445, keto:4466/4467) have no authentication: whoever reaches them can create
+# people, mint tokens and change groups. So: ingress into the namespace is denied, except
+#   - from the namespace's own pods (the stack talks to its admin APIs), and
+#   - to the public ports, from anywhere. They are public on the internet anyway (Kratos 4433, Hydra 4444, UI 3000)
+#     or harmless (Oathkeeper's decision API 4456, called by Traefik for every namespace's forward-auth).
+#   - to the metrics ports of Keto (4468) and Oathkeeper (9000), from the namespace `monitoring`. Kratos and Hydra
+#     serve their metrics only on the admin ports, which stay closed: their health shows in the cluster's probes of
+#     the public endpoints and in Traefik's metrics for them.
+# Traefik runs on the host network, so it cannot be selected by pod labels; this rule does not need to.
+# The cluster must enforce NetworkPolicies (k3s does by default).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-public-ports
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - { protocol: TCP, port: 4433 } # kratos public
+        - { protocol: TCP, port: 4444 } # hydra public
+        - { protocol: TCP, port: 4456 } # oathkeeper decisions
+        - { protocol: TCP, port: 3000 } # sso-ui
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports:
+        - { protocol: TCP, port: 4468 } # keto metrics
+        - { protocol: TCP, port: 9000 } # oathkeeper metrics

@@ -1,0 +1,143 @@
+# Routes (Gateway API) on the cluster's shared Gateway `traefik/main`, which terminates TLS. Traefik middlewares
+# are attached as ExtensionRef filters; they live in this namespace.
+#
+# auth.bulbashenko.com is public. The admin page (users.int) answers only to the mesh (tailnet addresses) and only
+# after Oathkeeper's forward-auth. When several rules match a request, Gateway API picks the longest path prefix,
+# so the rate-limited prefixes below win over /self-service/ for the methods they list.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: auth-public
+spec:
+  parentRefs:
+    - { name: main, namespace: traefik, sectionName: subdomains }
+  hostnames: [auth.bulbashenko.com]
+  rules:
+    # Form submissions that carry secrets: rate-limited (Kratos has no lockout of its own).
+    - matches:
+        - { method: POST, path: { type: PathPrefix, value: /self-service/login } }
+        - { method: POST, path: { type: PathPrefix, value: /self-service/recovery } }
+        - { method: POST, path: { type: PathPrefix, value: /self-service/verification } }
+        - { method: POST, path: { type: PathPrefix, value: /self-service/settings } }
+      filters:
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: limit-ip } }
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: limit-all } }
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: limit-inflight } }
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: headers } }
+      backendRefs: [{ name: kratos, port: 4433 }]
+    - matches:
+        - { path: { type: Exact, value: /oauth2/token } }
+      filters:
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: limit-ip } }
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: limit-all } }
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: headers } }
+      backendRefs: [{ name: hydra, port: 4444 }]
+    - matches:
+        - { path: { type: PathPrefix, value: /self-service/ } }
+        - { path: { type: PathPrefix, value: /sessions/ } }
+        - { path: { type: PathPrefix, value: /.well-known/ory/ } }
+      filters:
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: headers } }
+      backendRefs: [{ name: kratos, port: 4433 }]
+    - matches:
+        - { path: { type: PathPrefix, value: /oauth2/ } }
+        - { path: { type: Exact, value: /userinfo } }
+        - { path: { type: Exact, value: /.well-known/openid-configuration } }
+        - { path: { type: Exact, value: /.well-known/jwks.json } }
+        - { path: { type: Exact, value: /.well-known/webfinger } }
+      filters:
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: headers } }
+      backendRefs: [{ name: hydra, port: 4444 }]
+    - matches:
+        - { path: { type: PathPrefix, value: / } }
+      filters:
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: headers } }
+      backendRefs: [{ name: sso-ui, port: 3000 }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: auth-admin
+spec:
+  parentRefs:
+    - { name: main, namespace: traefik, sectionName: int }
+  hostnames: [users.int.bulbashenko.com]
+  rules:
+    - filters:
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: mesh-only } }
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: forward-auth } }
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: headers } }
+      backendRefs: [{ name: sso-ui, port: 3000 }]
+---
+# Per client address: 10 per minute, bursts of 5. Traefik runs on the host network with no proxy in front, so the
+# address it sees is the client's.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: limit-ip
+spec:
+  rateLimit:
+    average: 10
+    period: 1m
+    burst: 5
+---
+# Everyone together: 120 per minute, so rotating addresses do not help either.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: limit-all
+spec:
+  rateLimit:
+    average: 120
+    period: 1m
+    burst: 20
+    sourceCriterion:
+      requestHost: true
+---
+# Password hashing (argon2, 64 MB each) at most four at a time, so a burst cannot push Kratos past its memory
+# limit (ory.yaml); the rest wait in Traefik instead of killing the pod.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: limit-inflight
+spec:
+  inFlightReq:
+    amount: 4
+    sourceCriterion:
+      requestHost: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: headers
+spec:
+  headers:
+    contentTypeNosniff: true
+    frameDeny: true
+    referrerPolicy: strict-origin-when-cross-origin
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+---
+# Mesh only: tailnet addresses (Headscale hands out 100.64.0.0/10 and fd7a:115c:a1e0::/48).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: mesh-only
+spec:
+  ipAllowList:
+    sourceRange: [100.64.0.0/10, "fd7a:115c:a1e0::/48"]
+---
+# Forward-auth for every *.int admin UI without a login of its own (ory/oathkeeper/rules.yml). Routes in other
+# namespaces cannot reference this object (ExtensionRef is namespace-local): they declare their own Middleware with
+# the same address, http://oathkeeper.auth.svc.cluster.local:4456/decisions.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: forward-auth
+spec:
+  forwardAuth:
+    address: http://oathkeeper.auth.svc.cluster.local:4456/decisions
+    trustForwardHeader: true
+    authResponseHeaders: [Remote-User, Remote-Email, Remote-Name]
+    # Oathkeeper's decisions are tiny; Traefik would buffer any size otherwise.
+    maxResponseBodySize: 65536

@@ -1,0 +1,107 @@
+# The production routes (deploy/routes.yaml) as Traefik file configuration, on the test domain.
+# One difference: production keys the per-client rate limit on the client's address; every test request comes from
+# 127.0.0.1, so here the client is the X-Test-Client-IP header (random per test run, playwright.config.ts).
+http:
+  middlewares:
+    limit-ip:
+      rateLimit:
+        average: 60
+        period: 1m
+        burst: 5
+        sourceCriterion:
+          requestHeaderName: X-Test-Client-IP
+    limit-all:
+      rateLimit:
+        average: 1000
+        period: 1m
+        burst: 20
+        sourceCriterion:
+          requestHost: true
+    limit-inflight:
+      inFlightReq:
+        amount: 4
+        sourceCriterion:
+          requestHost: true
+    headers:
+      headers:
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: strict-origin-when-cross-origin
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+    forward-auth:
+      forwardAuth:
+        address: http://oathkeeper:4456/decisions
+        trustForwardHeader: true
+        authResponseHeaders: [Remote-User, Remote-Email, Remote-Name]
+
+  routers:
+    kratos-secrets:
+      rule: Host(`auth.bulbashenko.test`) && Method(`POST`) && (PathPrefix(`/self-service/login`) || PathPrefix(`/self-service/recovery`) || PathPrefix(`/self-service/verification`) || PathPrefix(`/self-service/settings`))
+      priority: 200
+      entryPoints: [https]
+      tls: {}
+      middlewares: [limit-ip, limit-all, limit-inflight, headers]
+      service: kratos
+    hydra-token:
+      rule: Host(`auth.bulbashenko.test`) && Path(`/oauth2/token`)
+      priority: 200
+      entryPoints: [https]
+      tls: {}
+      middlewares: [limit-ip, limit-all, headers]
+      service: hydra
+    kratos:
+      rule: Host(`auth.bulbashenko.test`) && (PathPrefix(`/self-service/`) || PathPrefix(`/sessions/`) || PathPrefix(`/.well-known/ory/`))
+      priority: 100
+      entryPoints: [https]
+      tls: {}
+      middlewares: [headers]
+      service: kratos
+    hydra:
+      rule: Host(`auth.bulbashenko.test`) && (PathPrefix(`/oauth2/`) || Path(`/userinfo`) || Path(`/.well-known/openid-configuration`) || Path(`/.well-known/jwks.json`) || Path(`/.well-known/webfinger`))
+      priority: 100
+      entryPoints: [https]
+      tls: {}
+      middlewares: [headers]
+      service: hydra
+    ui:
+      rule: Host(`auth.bulbashenko.test`)
+      priority: 10
+      entryPoints: [https]
+      tls: {}
+      middlewares: [headers]
+      service: sso-ui
+    # The admin page and a stand-in admin UI without a login of its own, both behind forward-auth. Production also
+    # allows only the mesh (tailnet) addresses there.
+    users-int:
+      rule: Host(`users.int.bulbashenko.test`)
+      entryPoints: [https]
+      tls: {}
+      middlewares: [forward-auth, headers]
+      service: sso-ui
+    garage-int:
+      rule: Host(`garage.int.bulbashenko.test`)
+      entryPoints: [https]
+      tls: {}
+      middlewares: [forward-auth]
+      service: whoami
+    # The OIDC test apps' redirect target.
+    app:
+      rule: Host(`app.bulbashenko.test`)
+      entryPoints: [https]
+      tls: {}
+      service: whoami
+
+  services:
+    kratos:
+      loadBalancer:
+        servers: [{ url: "http://kratos:4433" }]
+    hydra:
+      loadBalancer:
+        servers: [{ url: "http://hydra:4444" }]
+    sso-ui:
+      loadBalancer:
+        servers: [{ url: "http://sso-ui:3000" }]
+    whoami:
+      loadBalancer:
+        servers: [{ url: "http://whoami:80" }]

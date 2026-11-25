@@ -1,0 +1,15 @@
+# The read-only smoke tests (@smoke in e2e/tests) against production, run by Flux after every deploy of the base:
+# the deploying side applies this directory once the stack is ready and waits for the Job. A failure is what rolls
+# the deploy back (cglc-main/docs delivery.md). The image tag is set to the released version, like auth-ui's.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: auth
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - job.yaml
+images:
+  - name: ghcr.io/cglc-main/auth-e2e
+    newTag: main

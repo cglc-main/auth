@@ -1,0 +1,59 @@
+# Kubernetes base of the stack, deployed by cglc-main/infra: a Flux GitRepository on a release tag of this repo, with
+# the auth-ui image of the same release. It sits at the root because it bundles the configs in ory/, the same files
+# the test stack (e2e/compose.yml) mounts. Contract with the deploying side: cglc-main/docs contracts/auth.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: auth
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - deploy/ory.yaml
+  - deploy/ui.yaml
+  - deploy/routes.yaml
+  - deploy/network-policy.yaml
+  - deploy/disruption.yaml
+images:
+  - name: ghcr.io/cglc-main/auth-ui
+    newTag: main
+configMapGenerator:
+  - name: kratos-config
+    files:
+      - ory/kratos/kratos.yml
+      - ory/kratos/identity.schema.json
+  - name: kratos-courier-templates
+    files:
+      - recovery_code.invalid.email.body.gotmpl=ory/kratos/courier-templates/recovery_code/invalid/email.body.gotmpl
+      - recovery_code.invalid.email.body.plaintext.gotmpl=ory/kratos/courier-templates/recovery_code/invalid/email.body.plaintext.gotmpl
+      - recovery_code.invalid.email.subject.gotmpl=ory/kratos/courier-templates/recovery_code/invalid/email.subject.gotmpl
+      - recovery_code.valid.email.body.gotmpl=ory/kratos/courier-templates/recovery_code/valid/email.body.gotmpl
+      - recovery_code.valid.email.body.plaintext.gotmpl=ory/kratos/courier-templates/recovery_code/valid/email.body.plaintext.gotmpl
+      - recovery_code.valid.email.subject.gotmpl=ory/kratos/courier-templates/recovery_code/valid/email.subject.gotmpl
+      - verification_code.invalid.email.body.gotmpl=ory/kratos/courier-templates/verification_code/invalid/email.body.gotmpl
+      - verification_code.invalid.email.body.plaintext.gotmpl=ory/kratos/courier-templates/verification_code/invalid/email.body.plaintext.gotmpl
+      - verification_code.invalid.email.subject.gotmpl=ory/kratos/courier-templates/verification_code/invalid/email.subject.gotmpl
+      - verification_code.valid.email.body.gotmpl=ory/kratos/courier-templates/verification_code/valid/email.body.gotmpl
+      - verification_code.valid.email.body.plaintext.gotmpl=ory/kratos/courier-templates/verification_code/valid/email.body.plaintext.gotmpl
+      - verification_code.valid.email.subject.gotmpl=ory/kratos/courier-templates/verification_code/valid/email.subject.gotmpl
+  - name: hydra-config
+    files:
+      - ory/hydra/hydra.yml
+  - name: hydra-clients
+    files:
+      - ory/hydra/clients/bulbashenko-site.json
+      - ory/hydra/clients/flux-web.json
+      - ory/hydra/clients/grafana.json
+      - ory/hydra/clients/headscale.json
+      - ory/hydra/clients/matrix-mas.json
+      - ory/hydra/clients/nextcloud.json
+      - ory/hydra/clients/stalwart-webui.json
+      - ory/hydra/clients/thunderbird.json
+  - name: keto-config
+    files:
+      - ory/keto/keto.yml
+      - ory/keto/namespaces.keto.ts
+  - name: oathkeeper-config
+    files:
+      - ory/oathkeeper/oathkeeper.yml
+      - ory/oathkeeper/rules.yml

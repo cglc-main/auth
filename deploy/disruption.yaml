@@ -1,0 +1,45 @@
+# Node drains (kured reboots, k3s upgrades) take one replica at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kratos
+spec:
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector: { matchLabels: { app: kratos } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hydra
+spec:
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector: { matchLabels: { app: hydra } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keto
+spec:
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector: { matchLabels: { app: keto } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: oathkeeper
+spec:
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector: { matchLabels: { app: oathkeeper } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sso-ui
+spec:
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector: { matchLabels: { app: sso-ui } }

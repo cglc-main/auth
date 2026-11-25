@@ -1,0 +1,207 @@
+# The whole stack for the Playwright suite, locally and in CI: Postgres, the four Ory services with the configs from
+# ory/ (plus the test overrides in e2e/ory), the UI, mailpit and a Traefik that serves the production routes
+# (e2e/traefik) on *.bulbashenko.test with a self-made certificate.
+#
+#   e2e/run.sh up | test | down | logs [service]
+#
+# Production does not use this file: it runs the Kustomize base (kustomization.yaml, deploy/).
+
+name: auth-e2e
+
+x-ory-env: &ory-env
+  SQA_OPT_OUT: "true"
+  LOG_LEVEL: info
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+    volumes:
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  kratos-migrate:
+    image: oryd/kratos:v26.2.0
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *ory-env
+      DSN: postgres://kratos:test@postgres:5432/kratos?sslmode=disable
+    volumes:
+      - ../ory/kratos:/etc/config/kratos:ro
+      - ./ory:/etc/config/test:ro
+    command: ["migrate", "sql", "-e", "--yes", "-c", "/etc/config/kratos/kratos.yml", "-c", "/etc/config/test/kratos.test.yml"]
+
+  kratos:
+    image: oryd/kratos:v26.2.0
+    depends_on:
+      kratos-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *ory-env
+      DSN: postgres://kratos:test@postgres:5432/kratos?sslmode=disable
+      SECRETS_COOKIE: test-kratos-cookie-secret-0123456789
+      SECRETS_DEFAULT: test-kratos-default-secret-0123456789
+      SECRETS_CIPHER: 0123456789abcdef0123456789abcdef
+      SECRETS_PAGINATION: test-kratos-pagination-secret-0123456789
+      COURIER_SMTP_CONNECTION_URI: smtp://mailpit:1025/?disable_starttls=true
+      COURIER_SMTP_FROM_ADDRESS: noreply@bulbashenko.test
+    # Test only: the admin API on loopback, so Playwright can prepare people.
+    ports:
+      - "127.0.0.1:4434:4434"
+    volumes:
+      - ../ory/kratos:/etc/config/kratos:ro
+      - ./ory:/etc/config/test:ro
+    command: ["serve", "-c", "/etc/config/kratos/kratos.yml", "-c", "/etc/config/test/kratos.test.yml", "--watch-courier"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:4434/admin/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *ory-env
+      DSN: postgres://hydra:test@postgres:5432/hydra?sslmode=disable
+    volumes:
+      - ../ory/hydra:/etc/config/hydra:ro
+      - ./ory:/etc/config/test:ro
+    command: ["migrate", "sql", "up", "-e", "--yes", "-c", "/etc/config/hydra/hydra.yml", "-c", "/etc/config/test/hydra.test.yml"]
+
+  hydra:
+    image: oryd/hydra:v26.2.0
+    depends_on:
+      hydra-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *ory-env
+      DSN: postgres://hydra:test@postgres:5432/hydra?sslmode=disable
+      SECRETS_SYSTEM: test-hydra-system-secret-0123456789
+      SECRETS_COOKIE: test-hydra-cookie-secret-0123456789
+      SECRETS_PAGINATION: test-hydra-pagination-secret-0123456789
+    ports:
+      - "127.0.0.1:4445:4445"
+    volumes:
+      - ../ory/hydra:/etc/config/hydra:ro
+      - ./ory:/etc/config/test:ro
+    command: ["serve", "all", "-c", "/etc/config/hydra/hydra.yml", "-c", "/etc/config/test/hydra.test.yml"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:4445/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  keto-migrate:
+    image: oryd/keto:v26.2.0
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *ory-env
+      DSN: postgres://keto:test@postgres:5432/keto?sslmode=disable
+    volumes:
+      - ../ory/keto:/etc/config/keto:ro
+    command: ["migrate", "up", "--yes", "-c", "/etc/config/keto/keto.yml"]
+
+  keto:
+    image: oryd/keto:v26.2.0
+    depends_on:
+      keto-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *ory-env
+      DSN: postgres://keto:test@postgres:5432/keto?sslmode=disable
+    ports:
+      - "127.0.0.1:4466:4466"
+      - "127.0.0.1:4467:4467"
+    volumes:
+      - ../ory/keto:/etc/config/keto:ro
+    command: ["serve", "-c", "/etc/config/keto/keto.yml"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:4466/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  oathkeeper:
+    image: oryd/oathkeeper:v26.2.0
+    depends_on:
+      kratos: { condition: service_healthy }
+      keto: { condition: service_healthy }
+    environment:
+      <<: *ory-env
+    volumes:
+      - ../ory/oathkeeper:/etc/config/oathkeeper:ro
+      - ./ory:/etc/config/test:ro
+    command: ["serve", "-c", "/etc/config/oathkeeper/oathkeeper.yml", "-c", "/etc/config/test/oathkeeper.test.yml"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:4456/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  sso-ui:
+    build:
+      context: ../ui
+    depends_on:
+      kratos: { condition: service_healthy }
+      hydra: { condition: service_healthy }
+      keto: { condition: service_healthy }
+    environment:
+      PUBLIC_URL: https://auth.bulbashenko.test
+      ADMIN_HOST: users.int.bulbashenko.test
+      KRATOS_PUBLIC_URL: http://kratos:4433
+      KRATOS_ADMIN_URL: http://kratos:4434
+      HYDRA_ADMIN_URL: http://hydra:4445
+      KETO_READ_URL: http://keto:4466
+      KETO_WRITE_URL: http://keto:4467
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:3000/api/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # One-shot, like the hydra-clients Job: the production clients plus the test apps.
+  hydra-clients:
+    build:
+      context: ../ui
+    depends_on:
+      hydra: { condition: service_healthy }
+    environment:
+      HYDRA_ADMIN_URL: http://hydra:4445
+      OIDC_SITE_CLIENT_SECRET: test-site-secret
+      OIDC_HEADSCALE_CLIENT_SECRET: test-headscale-secret
+      OIDC_FLUXWEB_CLIENT_SECRET: test-fluxweb-secret
+      OIDC_GRAFANA_CLIENT_SECRET: test-grafana-secret
+      OIDC_NEXTCLOUD_CLIENT_SECRET: test-nextcloud-secret
+      OIDC_MAS_CLIENT_SECRET: test-mas-secret
+    volumes:
+      - ../ory/hydra/clients:/app/clients:ro
+      - ./clients:/app/e2e-clients:ro
+    command: ["node", "scripts/sync-clients.mjs", "/app/clients", "/app/e2e-clients"]
+
+  # Stand-in for an admin UI without a login of its own (garage.int), behind forward-auth, and the OIDC test app.
+  whoami:
+    image: traefik/whoami:v1.12.0
+
+  traefik:
+    image: traefik:v3.7.14
+    depends_on: [sso-ui, oathkeeper]
+    command:
+      - --entrypoints.https.address=:443
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --log.level=WARN
+    ports:
+      - "127.0.0.1:443:443"
+    volumes:
+      - ./traefik:/etc/traefik/dynamic:ro
+      - ./certs:/certs:ro
