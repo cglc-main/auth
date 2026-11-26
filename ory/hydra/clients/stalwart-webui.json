@@ -14,9 +14,8 @@
     "stalwart"
   ],
   "redirect_uris": [
-    "https://mail.bulbashenko.com/admin/oauth/callback",
-    "https://mail.bulbashenko.com/account/oauth/callback",
-    "https://mail.int.bulbashenko.com/admin/oauth/callback"
+    "https://mail.int.bulbashenko.com/admin/oauth/callback",
+    "https://mail.bulbashenko.com/account/oauth/callback"
   ],
   "allowed_cors_origins": [
     "https://mail.bulbashenko.com",
@@ -25,7 +24,8 @@
   "access_token_strategy": "jwt",
   "skip_consent": true,
   "post_logout_redirect_uris": [
-    "https://mail.bulbashenko.com/account"
+    "https://mail.int.bulbashenko.com/admin/login",
+    "https://mail.bulbashenko.com/account/login"
   ],
   "metadata": {
     "required_group": "mail-users",
