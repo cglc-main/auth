@@ -40,6 +40,12 @@ spec:
         - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: headers } }
       backendRefs: [{ name: kratos, port: 4433 }]
     - matches:
+        - { path: { type: Exact, value: /oauth2/sessions/logout } }
+      filters:
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: stalwart-logout } }
+        - { type: ExtensionRef, extensionRef: { group: traefik.io, kind: Middleware, name: headers } }
+      backendRefs: [{ name: hydra, port: 4444 }]
+    - matches:
         - { path: { type: PathPrefix, value: /oauth2/ } }
         - { path: { type: Exact, value: /userinfo } }
         - { path: { type: Exact, value: /.well-known/openid-configuration } }
@@ -117,6 +123,18 @@ spec:
     referrerPolicy: strict-origin-when-cross-origin
     stsSeconds: 31536000
     stsIncludeSubdomains: true
+---
+# The Stalwart web UI signs out with post_logout_redirect_uri but no id_token_hint (it keeps no ID token), which
+# Hydra rejects. That exact request goes to the logout without parameters: Hydra ends the session itself and lands on
+# the SSO's sign-in page. Every other logout (with id_token_hint) passes unchanged.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: stalwart-logout
+spec:
+  redirectRegex:
+    regex: ^https?://([^/]+)/oauth2/sessions/logout\?client_id=stalwart-webui&post_logout_redirect_uri=[^&]*$
+    replacement: https://${1}/oauth2/sessions/logout
 ---
 # Mesh only: tailnet addresses (Headscale hands out 100.64.0.0/10 and fd7a:115c:a1e0::/48).
 apiVersion: traefik.io/v1alpha1
