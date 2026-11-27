@@ -23,7 +23,7 @@ concurrency:
 jobs:
   release:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
-    uses: cglc-main/.github/.github/workflows/release.yml@12020eafd8d6eb6d051c6a3f13239d49b5343eb4 # main
+    uses: cglc-main/.github/.github/workflows/release.yml@05c2594b865c10033d9e51f8a1a447c062d133f9 # main
     with:
       sha: ${{ github.event.workflow_run.head_sha }}
 
